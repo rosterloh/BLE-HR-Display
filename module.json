@@ -1,0 +1,15 @@
+{
+  "name": "ble-hr-display",
+  "version": "0.0.0",
+  "bin": "./source",
+  "private": true,
+  "description": "Displays current Heart Rate from bluetooth wristband",
+  "author": "Richard Osterloh <richard.osterloh@gmail.com>",
+  "license": "Apache-2.0",
+  "extraIncludes": [
+    "include"
+  ],
+  "dependencies": {
+    "ble": "^2.0.3"
+  }
+}
