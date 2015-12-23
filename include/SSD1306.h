@@ -5,62 +5,155 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "mbed-drivers/mbed.h"
-#include "data.h"
+#include "SSD1306Fonts.h"
 
-class SSD1306
-{
-  protected:
-	   SSD1306(PinName sda, PinName scl);
+#define active_width 8
+#define active_height 8
+static const char active_bits[] = { 0x00, 0x18, 0x3c, 0x7e, 0x7e, 0x3c, 0x18, 0x00 };
 
-    /**
-	   * @brief  Initialize the singleton
-	   * @retval true if initialization successful,
-	   * @retval false otherwise
-	   */
-	  bool Init(void) {
-      send_cmd(0xAE);   // display off
-      send_cmd(0xD5);   // display divide ratio/osc. freq. ratio
-      send_cmd(0x80);   // the suggested ratio 0x80
-      send_cmd(0xA8);   // multiplex ation mode: 63
-      send_cmd(0x3F);
-      send_cmd(0xD3);   // set display offset
-      send_cmd(0x00);   // no offset
-      send_cmd(0x40);   // set display start line
-      send_cmd(0x8D);   // set display offset
-      send_cmd(0x14);
-      send_cmd(0xA1);   // segment remap
-      send_cmd(0xC8);   // set COM output scan direction
-      send_cmd(0xDA);   // common pads hardware: alternative
-      send_cmd(0x12);   // COMSCANDEC
-      send_cmd(0x81);   // contrast control
-      send_cmd(0xCF);
-      send_cmd(0xD9);   // set pre-charge period
-      send_cmd(0xF1);
-      send_cmd(0xDB);   // VCOM deselect level mode
-      send_cmd(0x40);   // set vcomh = 0.83 * VCC
-      send_cmd(0xA4);   // set entire display on/off
-      send_cmd(0xA6);   // set normal display
-      send_cmd(0xAF);   // set display on
+#define inactive_width 8
+#define inactive_height 8
+static const char inactive_bits[] = { 0x00, 0x0, 0x0, 0x18, 0x18, 0x0, 0x0, 0x00 };
 
-      //drawBMP(53, 0, 127, 8, splash);
-      printBigNumber('1', 0, 0);
+#define BLACK 0
+#define WHITE 1
+#define INVERSE 2
 
-      return true;
-	  };
+#define WIDTH_POS 0
+#define HEIGHT_POS 1
+#define FIRST_CHAR_POS 2
+#define CHAR_NUM_POS 3
+#define CHAR_WIDTH_START_POS 4
 
-  public:
-	  static SSD1306* Instance(PinName sda, PinName scl);
+#define TEXT_ALIGN_LEFT 0
+#define TEXT_ALIGN_CENTER 1
+#define TEXT_ALIGN_RIGHT 2
 
-    void locate(int x, int y);
-    void cls(void);
-    void drawBMP(unsigned char x0, unsigned char y0, unsigned char x1, unsigned char y1, unsigned char BMP[]);
-    void printBigNumber(unsigned char s, int x, int y);
+class SSD1306 {
 
-  private:
-	  static SSD1306 *_instance;
+private:
+  int _addr;
+  int _sda;
+  int _sdc;
+  I2C _i2c;
+  uint8_t buffer[128 * 64 / 8];
+  int _frameState = 0;
+  int _frameTick = 0;
+  int _currentFrame = 0;
+  int _frameCount = 0;
+  int _frameWaitTicks = 100;
+  int _frameTransitionTicks = 25;
+  int _textAlignment = TEXT_ALIGN_LEFT;
+  int _color = WHITE;
+  const char *_fontData = ArialMT_Plain_10;
+  void (**_frameCallbacks)(int x, int y);
 
-    I2C *i2c;
+public:
+   // Create the display object connected to pin sda and sdc
+   SSD1306(int i2cAddress, int sda, int sdc);
 
-    void send_cmd(uint8_t cmd);
-    void send_data(uint8_t data);
+   // Initialize the display
+   void init();
+
+   // Cycle through the initialization
+   void resetDisplay(void);
+
+   // Connect again to the display through I2C
+   void reconnect(void);
+
+   // Turn the display on
+   void displayOn(void);
+
+   // Turn the display offs
+   void displayOff(void);
+
+   // Clear the local pixel buffer
+   void clear(void);
+
+   // Write the buffer to the display memory
+   void display(void);
+
+   // Set display contrast
+   void setContrast(char contrast);
+
+   // Turn the display upside down
+   void flipScreenVertically();
+
+   // Send a command to the display (low level function)
+   void sendCommand(unsigned char com);
+
+   // Send all the init commands
+   void sendInitCommands(void);
+
+   // Draw a pixel at given position
+   void setPixel(int x, int y);
+
+   // Draw 8 bits at the given position
+   void setChar(int x, int y, unsigned char data);
+
+   // Draw the border of a rectangle at the given location
+   void drawRect(int x, int y, int width, int height);
+
+   // Fill the rectangle
+   void fillRect(int x, int y, int width, int height);
+
+   // Draw a bitmap with the given dimensions
+   void drawBitmap(int x, int y, int width, int height, const char *bitmap);
+
+   // Draw an XBM image with the given dimensions
+   void drawXbm(int x, int y, int width, int height, const char *xbm);
+
+   // Sets the color of all pixel operations
+   void setColor(int color);
+
+   // Draws a string at the given location
+   void drawString(int x, int y, String text);
+
+   // Draws a String with a maximum width at the given location.
+   // If the given String is wider than the specified width
+   // The text will be wrapped to the next line at a space or dash
+   void drawStringMaxWidth(int x, int y, int maxLineWidth, String text);
+
+   // Returns the width of the String with the current
+   // font settings
+   int getStringWidth(String text);
+
+   // Specifies relative to which anchor point
+   // the text is rendered. Available constants:
+   // TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER, TEXT_ALIGN_RIGHT
+   void setTextAlignment(int textAlignment);
+
+   // Sets the current font. Available default fonts
+   // defined in SSD1306Fonts.h:
+   // ArialMT_Plain_10, ArialMT_Plain_16, ArialMT_Plain_24
+   void setFont(const char *fontData);
+
+   // Sets the callback methods of the format void method(x,y)
+   void setFrameCallbacks(int frameCount, void (*frameCallbacks[])(int x, int y));
+
+   // Tells the framework to move to the next tick. The
+   // current visible frame callback will be called once
+   // per tick
+   void nextFrameTick(void);
+
+   // Draws the frame indicators. In a normal setup
+   // the framework does this for you
+   void drawIndicators(int frameCount, int activeFrame);
+
+   // defines how many ticks a frame should remain visible
+   // This does not include the transition
+   void setFrameWaitTicks(int frameWaitTicks);
+
+   // Defines how many ticks should be used for a transition
+   void setFrameTransitionTicks(int frameTransitionTicks);
+
+   // Returns the current state of the internal state machine
+   // Possible values: FRAME_STATE_FIX, FRAME_STATE_TRANSITION
+   // You can use this to detect when there is no transition
+   // on the way to execute operations that would
+   int getFrameState();
+
+   const int FRAME_STATE_FIX = 0;
+   const int FRAME_STATE_TRANSITION = 1;
+
 };
